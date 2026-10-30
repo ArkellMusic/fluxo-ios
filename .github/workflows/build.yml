@@ -1,0 +1,66 @@
+name: Build IPA
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Elegir el Xcode más reciente
+        run: |
+          XC=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          echo "Usando $XC"
+          sudo xcode-select -s "$XC"
+          xcodebuild -version
+
+      - name: Instalar herramientas
+        run: brew install xcodegen ldid
+
+      - name: Generar proyecto
+        run: xcodegen generate
+
+      - name: Compilar
+        run: |
+          set -o pipefail
+          xcodebuild -project Fluxo.xcodeproj -scheme Fluxo -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build | tee build.log | grep -E "error:|warning: .*deprecated|BUILD" || true
+          test -d build/Build/Products/Release-iphoneos/Fluxo.app
+
+      - name: Mostrar errores
+        if: failure()
+        run: grep -n "error:" build.log | head -60 || true
+
+      - name: Empaquetar IPA (sin firmar, con entitlements)
+        run: |
+          APP=build/Build/Products/Release-iphoneos/Fluxo.app
+          ldid -Sentitlements/widgets.plist "$APP/PlugIns/FluxoWidgets.appex/FluxoWidgets"
+          ldid -Sentitlements/app.plist "$APP/Fluxo"
+          mkdir -p Payload
+          cp -R "$APP" Payload/
+          zip -qry Fluxo.ipa Payload
+          ls -lh Fluxo.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Fluxo-ipa
+          path: Fluxo.ipa
+
+      - name: Publicar release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Fluxo build ${{ github.run_number }}
+          body: "Descarga **Fluxo.ipa** e instálala con SideStore (los widgets no funcionan dentro de LiveContainer)."
+          files: Fluxo.ipa
+          make_latest: true
