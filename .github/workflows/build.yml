@@ -50,6 +50,20 @@ jobs:
           cp -R "$APP" Payload/
           zip -qry Fluxo.ipa Payload
           ls -lh Fluxo.ipa
+          {
+            echo "Descarga **Fluxo.ipa** e instálala con SideStore (los widgets no funcionan dentro de LiveContainer)."
+            echo ""
+            echo "<details><summary>Detalles de la compilación</summary>"
+            echo ""
+            echo '```'
+            xcodebuild -version
+            echo "Warnings: $(grep -c 'warning:' build.log || true)"
+            du -sh "$APP" "$APP/PlugIns/FluxoWidgets.appex"
+            echo "--- entitlements app"; ldid -e "$APP/Fluxo"
+            echo "--- entitlements widget"; ldid -e "$APP/PlugIns/FluxoWidgets.appex/FluxoWidgets"
+            echo '```'
+            echo "</details>"
+          } > notes.md
 
       - uses: actions/upload-artifact@v4
         with:
@@ -61,6 +75,6 @@ jobs:
         with:
           tag_name: build-${{ github.run_number }}
           name: Fluxo build ${{ github.run_number }}
-          body: "Descarga **Fluxo.ipa** e instálala con SideStore (los widgets no funcionan dentro de LiveContainer)."
+          body_path: notes.md
           files: Fluxo.ipa
           make_latest: true
