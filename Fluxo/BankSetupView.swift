@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 
 /// Guarda el banco elegido por si el login vuelve a la app por fluxo:// en vez de por la ventana.
@@ -31,7 +32,6 @@ struct BankSetupView: View {
     @State private var hasKey = BankKeys.privateKeyPEM != nil
     @State private var importing = false
     @State private var pasting = false
-    @State private var pasted = ""
     @State private var banks: [ASPSP] = []
     @State private var search = ""
     @State private var loading = false
@@ -115,21 +115,33 @@ struct BankSetupView: View {
         .background(Theme.background)
         .navigationTitle("Conectar banco")
         .navigationBarTitleDisplayMode(.inline)
-        .fileImporter(isPresented: $importing, allowedContentTypes: [UTType(filenameExtension: "pem") ?? .data, .plainText, .data]) { result in
+        .fileImporter(isPresented: $importing, allowedContentTypes: [.item]) { result in
             switch result {
-            case .success(let url):
-                let ok = url.startAccessingSecurityScopedResource()
-                defer { if ok { url.stopAccessingSecurityScopedResource() } }
-                if let text = try? String(contentsOf: url, encoding: .utf8) { storeKey(text) } else { error = "No se pudo leer el archivo." }
-            case .failure(let e):
-                error = e.localizedDescription
+            case .success(let url): importKey(from: url)
+            case .failure(let e): error = e.localizedDescription
             }
         }
-        .alert("Pega tu clave privada", isPresented: $pasting) {
-            TextField("-----BEGIN PRIVATE KEY-----", text: $pasted)
-            Button("Guardar") { storeKey(pasted); pasted = "" }
-            Button("Cancelar", role: .cancel) { pasted = "" }
+        .sheet(isPresented: $pasting) {
+            PasteKeySheet { text in storeKey(text) }
         }
+    }
+
+    private func importKey(from url: URL) {
+        let ok = url.startAccessingSecurityScopedResource()
+        defer { if ok { url.stopAccessingSecurityScopedResource() } }
+        var readError: NSError?
+        var content: Data?
+        // Coordinado: descarga el archivo de iCloud Drive si hace falta
+        NSFileCoordinator().coordinate(readingItemAt: url, options: .withoutChanges, error: &readError) { u in
+            content = try? Data(contentsOf: u)
+        }
+        guard let data = content, !data.isEmpty else {
+            error = "No se pudo leer el archivo" + (readError.map { ": \($0.localizedDescription)" } ?? ".")
+            model.message = error
+            return
+        }
+        let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .ascii) ?? String(decoding: data, as: UTF8.self)
+        storeKey(text)
     }
 
     private var filteredBanks: [ASPSP] {
@@ -142,8 +154,10 @@ struct BankSetupView: View {
             BankKeys.privateKeyPEM = text
             hasKey = true
             error = nil
+            model.message = "Clave privada guardada ✅"
         } catch {
             self.error = error.localizedDescription
+            model.message = error.localizedDescription
         }
     }
 
@@ -178,6 +192,46 @@ struct BankSetupView: View {
             error = nil
         } catch {
             self.error = error.localizedDescription
+        }
+    }
+}
+
+struct PasteKeySheet: View {
+    @Environment(\.dismiss) var dismiss
+    var onSave: (String) -> Void
+    @State private var text = ""
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Abre el archivo .pem, copia TODO su contenido (desde -----BEGIN hasta -----END) y pégalo aquí.")
+                    .font(.footnote).foregroundStyle(.secondary)
+                Button {
+                    text = UIPasteboard.general.string ?? ""
+                } label: {
+                    Label("Pegar del portapapeles", systemImage: "doc.on.clipboard")
+                        .frame(maxWidth: .infinity).padding(.vertical, 4)
+                }
+                .buttonStyle(.glass)
+                TextEditor(text: $text)
+                    .font(.caption.monospaced())
+                    .scrollContentBackground(.hidden)
+                    .padding(8)
+                    .background(RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.06)))
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+            }
+            .padding(16)
+            .background(Theme.background)
+            .navigationTitle("Pegar clave privada")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancelar") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Guardar") { onSave(text); dismiss() }
+                        .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
         }
     }
 }

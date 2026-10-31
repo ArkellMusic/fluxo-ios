@@ -278,20 +278,39 @@ extension Data {
 
 enum PEM {
     static func rsaPrivateKey(_ pem: String) throws -> SecKey {
-        let isPKCS8 = pem.contains("BEGIN PRIVATE KEY")
-        let b64 = pem.components(separatedBy: .newlines)
-            .filter { !$0.hasPrefix("-----") }
-            .joined()
-            .trimmingCharacters(in: .whitespaces)
-        guard var der = Data(base64Encoded: b64) else { throw BankError.badKey("el texto no es un PEM válido") }
-        if isPKCS8 { der = try pkcs1(fromPKCS8: der) }
+        let text = pem.replacingOccurrences(of: "\u{FEFF}", with: "")
+        if text.contains("ENCRYPTED PRIVATE KEY") {
+            throw BankError.badKey("la clave está cifrada con contraseña; genera una sin contraseña en Enable Banking")
+        }
+        // Busca el bloque de clave privada aunque venga en una sola línea o junto a un certificado
+        var label = ""
+        var body = text
+        if let r = text.range(of: "-----BEGIN ([A-Z ]*PRIVATE KEY)-----", options: .regularExpression) {
+            label = String(text[r]).replacingOccurrences(of: "-", with: "").replacingOccurrences(of: "BEGIN ", with: "")
+            let after = text[r.upperBound...]
+            body = after.range(of: "-----END").map { String(after[..<$0.lowerBound]) } ?? String(after)
+        } else if text.contains("BEGIN CERTIFICATE") || text.contains("PUBLIC KEY") {
+            throw BankError.badKey("este archivo es un certificado o clave pública; necesitas el archivo de la clave PRIVADA")
+        }
+        let b64 = body.components(separatedBy: CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "+/=")).inverted).joined()
+        guard let der = Data(base64Encoded: b64), !der.isEmpty else { throw BankError.badKey("el texto no es una clave PEM válida") }
+
+        var candidates: [Data] = []
+        if label == "RSA PRIVATE KEY" {
+            candidates = [der]
+        } else {
+            if let p1 = try? pkcs1(fromPKCS8: der) { candidates.append(p1) }
+            candidates.append(der)
+        }
         let attrs: [String: Any] = [kSecAttrKeyType as String: kSecAttrKeyTypeRSA,
                                     kSecAttrKeyClass as String: kSecAttrKeyClassPrivate]
-        var err: Unmanaged<CFError>?
-        guard let key = SecKeyCreateWithData(der as CFData, attrs as CFDictionary, &err) else {
-            throw BankError.badKey(err?.takeRetainedValue().localizedDescription ?? "formato no soportado")
+        var lastError = "formato no soportado"
+        for c in candidates {
+            var err: Unmanaged<CFError>?
+            if let key = SecKeyCreateWithData(c as CFData, attrs as CFDictionary, &err) { return key }
+            lastError = err?.takeRetainedValue().localizedDescription ?? lastError
         }
-        return key
+        throw BankError.badKey(lastError)
     }
 
     /// PKCS#8: SEQUENCE { INTEGER, SEQUENCE {OID, NULL}, OCTET STRING { PKCS#1 } }
