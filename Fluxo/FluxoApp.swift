@@ -46,6 +46,9 @@ struct RootView: View {
             }
         }
         .task {
+            await model.prefetchLogos()
+        }
+        .task {
             if model.data.bank != nil, BankKeys.isConfigured,
                (model.data.lastSync ?? .distantPast) < Date().addingTimeInterval(-6 * 3600) {
                 await model.sync()

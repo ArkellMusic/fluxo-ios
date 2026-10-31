@@ -77,7 +77,7 @@ struct SmallView: View {
             }
             Spacer(minLength: 0)
             if let next = entry.upcoming.first {
-                MerchantBubble(name: next.subscription.name, size: 34, color: next.subscription.color)
+                MerchantBubble(name: next.subscription.name, size: 34, color: next.subscription.color, domain: next.subscription.domain)
                 Text(next.subscription.name).font(.headline).lineLimit(1)
                 HStack {
                     Text(Fmt.money(next.subscription.amount)).font(.subheadline.monospacedDigit())
@@ -119,7 +119,7 @@ struct MediumView: View {
                 }
                 ForEach(entry.upcoming.prefix(3)) { o in
                     HStack(spacing: 8) {
-                        MerchantBubble(name: o.subscription.name, size: 24, color: o.subscription.color)
+                        MerchantBubble(name: o.subscription.name, size: 24, color: o.subscription.color, domain: o.subscription.domain)
                         Text(o.subscription.name).font(.subheadline.weight(.medium)).lineLimit(1)
                         Spacer(minLength: 4)
                         VStack(alignment: .trailing, spacing: 0) {

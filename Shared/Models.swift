@@ -126,6 +126,8 @@ struct Subscription: Codable, Identifiable, Hashable {
     var startMonth: Int = 1
     var category: Category = .suscripciones
     var colorHex: String? = nil
+    /// Web de la empresa para mostrar su logo (opcional; si no, se deduce del nombre).
+    var domain: String? = nil
 
     var color: Color { colorHex.map { Color(hex: $0) } ?? MerchantStyle.color(for: name) }
 

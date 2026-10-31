@@ -130,7 +130,7 @@ struct CalendarScreen: View {
             PaymentRow(name: o.subscription.name,
                        subtitle: "\(o.subscription.frequency.name) · \(Fmt.shortDate(o.date))",
                        amount: o.subscription.amount, status: status, statusColor: color,
-                       bubbleColor: o.subscription.color)
+                       bubbleColor: o.subscription.color, bubbleDomain: o.subscription.domain)
         }
         .contentShape(Rectangle())
         .onTapGesture { editing = o.subscription }
@@ -180,7 +180,7 @@ struct DayCell: View {
                 .foregroundStyle(isToday ? Theme.accent : (inMonth ? Color.primary : Color.secondary.opacity(0.5)))
             ZStack {
                 if let first = occurrences.first {
-                    MerchantBubble(name: first.subscription.name, size: 30, color: first.subscription.color)
+                    MerchantBubble(name: first.subscription.name, size: 30, color: first.subscription.color, domain: first.subscription.domain)
                         .opacity(inMonth ? 1 : 0.4)
                         .overlay(alignment: .topTrailing) {
                             if occurrences.count > 1 {

@@ -20,6 +20,22 @@ final class AppModel: ObservableObject {
         WidgetCenter.shared.reloadAllTimelines()
     }
 
+    // MARK: Logos
+
+    /// Descarga los logos de pagos fijos y comercios para que también salgan en los widgets.
+    func prefetchLogos() async {
+        var domains = Set<String>()
+        for s in data.subscriptions {
+            if let d = MerchantStyle.cleanDomain(s.domain) ?? MerchantStyle.domain(for: s.name) { domains.insert(d) }
+        }
+        for t in data.transactions.prefix(300) {
+            if let d = MerchantStyle.domain(for: t.merchant) { domains.insert(d) }
+        }
+        var gotNew = false
+        for d in domains where await LogoStore.shared.fetch(d) { gotNew = true }
+        if gotNew { WidgetCenter.shared.reloadAllTimelines() }
+    }
+
     // MARK: Pagos fijos
 
     func upsert(_ s: Subscription) {
@@ -29,6 +45,7 @@ final class AppModel: ObservableObject {
             data.subscriptions.append(s)
         }
         persist()
+        Task { await prefetchLogos() }
     }
 
     func delete(_ s: Subscription) {
@@ -73,6 +90,7 @@ final class AppModel: ObservableObject {
     func loadDemo() {
         data = DemoData.make(keepingBank: data.bank)
         persist()
+        Task { await prefetchLogos() }
     }
 
     func clearDemo() {

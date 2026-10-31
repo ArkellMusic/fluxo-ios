@@ -23,10 +23,11 @@ struct PaymentRow: View {
     var status: String?
     var statusColor: Color = .secondary
     var bubbleColor: Color? = nil
+    var bubbleDomain: String? = nil
 
     var body: some View {
         HStack(spacing: 14) {
-            MerchantBubble(name: name, size: 46, color: bubbleColor)
+            MerchantBubble(name: name, size: 46, color: bubbleColor, domain: bubbleDomain)
             VStack(alignment: .leading, spacing: 3) {
                 Text(name).font(.headline).lineLimit(1)
                 Text(subtitle).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)

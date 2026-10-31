@@ -101,7 +101,7 @@ struct SettingsScreen: View {
             ForEach(model.subscriptions) { s in
                 Button { editing = s } label: {
                     HStack(spacing: 12) {
-                        MerchantBubble(name: s.name, size: 32, color: s.color)
+                        MerchantBubble(name: s.name, size: 32, color: s.color, domain: s.domain)
                         VStack(alignment: .leading) {
                             Text(s.name).foregroundStyle(.primary)
                             Text("Día \(s.day) · \(s.frequency.name)").font(.caption).foregroundStyle(.secondary)
@@ -204,6 +204,7 @@ struct SubscriptionEditor: View {
     @State private var category: Category = .suscripciones
     @State private var color: Color = Theme.accent
     @State private var customColor = false
+    @State private var domain = ""
 
     private let months = Schedule.cal.standaloneMonthSymbols
 
@@ -214,7 +215,9 @@ struct SubscriptionEditor: View {
                     HStack {
                         Spacer()
                         MerchantBubble(name: name.isEmpty ? "?" : name, size: 64,
-                                       color: customColor ? color : MerchantStyle.color(for: name))
+                                       color: customColor ? color : MerchantStyle.color(for: name),
+                                       domain: MerchantStyle.cleanDomain(domain))
+                            .id((MerchantStyle.cleanDomain(domain) ?? "") + name)
                         Spacer()
                     }
                     .listRowBackground(Color.clear)
@@ -231,6 +234,16 @@ struct SubscriptionEditor: View {
                             ForEach(1...12, id: \.self) { Text(months[$0 - 1].capitalized).tag($0) }
                         }
                     }
+                }
+                Section {
+                    TextField("Web de la empresa (ej. netflix.com)", text: $domain)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(.URL)
+                } header: {
+                    Text("Logo")
+                } footer: {
+                    Text("Para las empresas conocidas el logo sale solo. Si no aparece, escribe su web.")
                 }
                 Section("Categoría y color") {
                     Picker("Categoría", selection: $category) {
@@ -275,6 +288,7 @@ struct SubscriptionEditor: View {
         amount = String(format: "%.2f", s.amount).replacingOccurrences(of: ".", with: ",")
         day = s.day; frequency = s.frequency; startMonth = s.startMonth; category = s.category
         if let hex = s.colorHex { customColor = true; color = Color(hex: hex) }
+        domain = s.domain ?? ""
     }
 
     private func save() {
@@ -283,6 +297,7 @@ struct SubscriptionEditor: View {
         s.name = name; s.amount = v; s.day = day; s.frequency = frequency
         s.startMonth = startMonth; s.category = category
         s.colorHex = customColor ? color.hexString : nil
+        s.domain = MerchantStyle.cleanDomain(domain)
         model.upsert(s)
         dismiss()
     }

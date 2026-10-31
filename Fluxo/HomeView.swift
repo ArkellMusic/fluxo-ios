@@ -127,7 +127,7 @@ struct HomeView: View {
                                subtitle: "\(o.subscription.frequency.name) · \(Fmt.shortDate(o.date))",
                                amount: o.subscription.amount, status: rel,
                                statusColor: rel == "Hoy" ? Theme.negative : .secondary,
-                               bubbleColor: o.subscription.color)
+                               bubbleColor: o.subscription.color, bubbleDomain: o.subscription.domain)
                 }
             }
         }

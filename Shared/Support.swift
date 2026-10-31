@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import UIKit
 
 // MARK: - Almacenamiento compartido (app + widgets)
 
@@ -209,22 +210,162 @@ enum MerchantStyle {
     }
 }
 
-/// Burbuja redonda con la inicial y el color del comercio.
+// MARK: - Logos reales (favicon de la web de cada empresa)
+
+extension MerchantStyle {
+    /// Palabra clave → web de la empresa. Se compara por palabras completas.
+    private static let domains: [(String, String)] = [
+        ("netflix", "netflix.com"), ("spotify", "spotify.com"), ("movistar", "movistar.es"), ("digi", "digimobil.es"),
+        ("disney", "disneyplus.com"), ("prime video", "primevideo.com"), ("amazon prime", "amazon.es"), ("amazon", "amazon.es"),
+        ("hbo", "max.com"), ("max", "max.com"), ("youtube", "youtube.com"), ("icloud", "icloud.com"), ("apple", "apple.com"),
+        ("google one", "one.google.com"), ("google", "google.com"), ("dazn", "dazn.com"), ("filmin", "filmin.es"),
+        ("crunchyroll", "crunchyroll.com"), ("twitch", "twitch.tv"), ("playstation", "playstation.com"), ("xbox", "xbox.com"),
+        ("steam", "steampowered.com"), ("nintendo", "nintendo.com"), ("tidal", "tidal.com"), ("audible", "audible.es"),
+        ("vodafone", "vodafone.es"), ("orange", "orange.es"), ("yoigo", "yoigo.com"), ("o2", "o2online.es"),
+        ("pepephone", "pepephone.com"), ("masmovil", "masmovil.es"), ("lowi", "lowi.es"), ("simyo", "simyo.es"), ("jazztel", "jazztel.com"),
+        ("mercadona", "mercadona.es"), ("carrefour", "carrefour.es"), ("lidl", "lidl.es"), ("dia", "dia.es"), ("alcampo", "alcampo.es"),
+        ("eroski", "eroski.es"), ("aldi", "aldi.es"), ("consum", "consum.es"), ("hipercor", "hipercor.es"), ("ahorramas", "ahorramas.com"),
+        ("shell", "shell.es"), ("repsol", "repsol.es"), ("cepsa", "cepsa.es"), ("moeve", "moeveglobal.com"), ("bp", "bp.com"),
+        ("galp", "galp.com"), ("ballenoil", "ballenoil.es"), ("plenoil", "plenoil.es"), ("petronor", "petronor.eus"),
+        ("iberdrola", "iberdrola.es"), ("endesa", "endesa.com"), ("naturgy", "naturgy.es"), ("totalenergies", "totalenergies.es"),
+        ("bizum", "bizum.es"), ("chatgpt", "openai.com"), ("openai", "openai.com"), ("claude", "claude.ai"), ("anthropic", "anthropic.com"),
+        ("midjourney", "midjourney.com"), ("canva", "canva.com"), ("adobe", "adobe.com"), ("microsoft", "microsoft.com"), ("office", "microsoft.com"),
+        ("uber eats", "ubereats.com"), ("uber", "uber.com"), ("cabify", "cabify.com"), ("bolt", "bolt.eu"), ("glovo", "glovoapp.com"),
+        ("just eat", "just-eat.es"), ("mcdonald", "mcdonalds.es"), ("mcdonalds", "mcdonalds.es"), ("burger king", "burgerking.es"),
+        ("telepizza", "telepizza.es"), ("dominos", "dominospizza.es"), ("kfc", "kfc.es"), ("starbucks", "starbucks.es"),
+        ("100 montaditos", "spain.100montaditos.com"), ("tgb", "thegoodburger.com"),
+        ("zara", "zara.com"), ("primark", "primark.com"), ("pull bear", "pullandbear.com"), ("bershka", "bershka.com"),
+        ("el corte ingles", "elcorteingles.es"), ("mediamarkt", "mediamarkt.es"), ("decathlon", "decathlon.es"), ("ikea", "ikea.com"),
+        ("leroy merlin", "leroymerlin.es"), ("aliexpress", "aliexpress.com"), ("shein", "shein.com"), ("temu", "temu.com"),
+        ("fnac", "fnac.es"), ("pccomponentes", "pccomponentes.com"), ("wallapop", "wallapop.com"), ("vinted", "vinted.es"),
+        ("druni", "druni.es"), ("primor", "primor.eu"), ("sephora", "sephora.es"), ("rituals", "rituals.com"),
+        ("synergym", "synergym.es"), ("basic fit", "basic-fit.com"), ("mcfit", "mcfit.com"), ("altafit", "altafitgymclub.com"),
+        ("renfe", "renfe.com"), ("iryo", "iryo.eu"), ("ouigo", "ouigo.com"), ("ryanair", "ryanair.com"), ("iberia", "iberia.com"),
+        ("vueling", "vueling.com"), ("booking", "booking.com"), ("airbnb", "airbnb.es"), ("blablacar", "blablacar.es"),
+        ("cinesa", "cinesa.es"), ("yelmo", "yelmocines.es"), ("ticketmaster", "ticketmaster.es"),
+        ("sanitas", "sanitas.es"), ("adeslas", "segurcaixaadeslas.es"), ("mapfre", "mapfre.es"), ("mutua", "mutua.es"),
+        ("linea directa", "lineadirecta.com"), ("allianz", "allianz.es"), ("axa", "axa.es"),
+        ("ing", "ing.es"), ("caixabank", "caixabank.es"), ("bbva", "bbva.es"), ("santander", "bancosantander.es"),
+        ("sabadell", "bancsabadell.com"), ("bankinter", "bankinter.com"), ("openbank", "openbank.es"), ("revolut", "revolut.com"),
+        ("n26", "n26.com"), ("paypal", "paypal.com"), ("wizink", "wizink.es"), ("cetelem", "cetelem.es"),
+        ("dgt", "dgt.es"), ("hacienda", "agenciatributaria.gob.es"), ("seguridad social", "seg-social.es"),
+    ]
+
+    private static var domainCache: [String: String] = [:]
+    private static let lock = NSLock()
+
+    static func normalize(_ s: String) -> String {
+        let folded = s.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "es_ES"))
+        let cleaned = folded.map { $0.isLetter || $0.isNumber ? $0 : " " }
+        return " " + String(cleaned).split(separator: " ").joined(separator: " ") + " "
+    }
+
+    /// Web de la empresa para un nombre de comercio, si la conocemos.
+    static func domain(for name: String) -> String? {
+        lock.lock(); defer { lock.unlock() }
+        if let d = domainCache[name] { return d.isEmpty ? nil : d }
+        let n = normalize(name)
+        var found = ""
+        for (key, d) in domains where n.contains(" \(key) ") { found = d; break }
+        domainCache[name] = found
+        return found.isEmpty ? nil : found
+    }
+
+    static func cleanDomain(_ s: String?) -> String? {
+        guard var d = s?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(), !d.isEmpty else { return nil }
+        for p in ["https://", "http://", "www."] where d.hasPrefix(p) { d.removeFirst(p.count) }
+        if let slash = d.firstIndex(of: "/") { d = String(d[..<slash]) }
+        return d.contains(".") ? d : nil
+    }
+}
+
+/// Descarga y guarda los logos en el contenedor compartido (los widgets los leen de ahí).
+final class LogoStore: @unchecked Sendable {
+    static let shared = LogoStore()
+    private let memory = NSCache<NSString, UIImage>()
+    private var failed = Set<String>()
+    private var inFlight = Set<String>()
+    private let lock = NSLock()
+
+    private var dir: URL {
+        let d = SharedStore.containerURL.appendingPathComponent("logos", isDirectory: true)
+        try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
+        return d
+    }
+
+    private func file(_ domain: String) -> URL { dir.appendingPathComponent(domain + ".png") }
+
+    func image(for domain: String) -> UIImage? {
+        if let img = memory.object(forKey: domain as NSString) { return img }
+        guard let data = try? Data(contentsOf: file(domain)), let img = UIImage(data: data) else { return nil }
+        memory.setObject(img, forKey: domain as NSString)
+        return img
+    }
+
+    /// Devuelve true si se ha descargado un logo nuevo.
+    func fetch(_ domain: String) async -> Bool {
+        if image(for: domain) != nil { return false }
+        lock.lock()
+        if failed.contains(domain) || inFlight.contains(domain) { lock.unlock(); return false }
+        inFlight.insert(domain)
+        lock.unlock()
+        defer { lock.lock(); inFlight.remove(domain); lock.unlock() }
+
+        let sources = [
+            "https://www.google.com/s2/favicons?domain=\(domain)&sz=256",
+            "https://icons.duckduckgo.com/ip3/\(domain).ico",
+        ]
+        for src in sources {
+            guard let url = URL(string: src),
+                  let result = try? await URLSession.shared.data(from: url),
+                  (result.1 as? HTTPURLResponse)?.statusCode == 200,
+                  let img = UIImage(data: result.0),
+                  img.size.width * img.scale >= 32 else { continue }
+            if let png = img.pngData() { try? png.write(to: file(domain), options: .atomic) }
+            memory.setObject(img, forKey: domain as NSString)
+            return true
+        }
+        lock.lock(); failed.insert(domain); lock.unlock()
+        return false
+    }
+}
+
+/// Burbuja redonda con el logo real de la empresa, o la inicial y su color si no hay logo.
 struct MerchantBubble: View {
     var name: String
     var size: CGFloat = 40
     var color: Color? = nil
+    var domain: String? = nil
+
+    @State private var logo: UIImage? = nil
+
+    private var resolvedDomain: String? { MerchantStyle.cleanDomain(domain) ?? MerchantStyle.domain(for: name) }
 
     var body: some View {
         let c = color ?? MerchantStyle.color(for: name)
+        let img = logo ?? resolvedDomain.flatMap { LogoStore.shared.image(for: $0) }
         ZStack {
-            Circle().fill(c.gradient)
-            Text(MerchantStyle.initials(for: name))
-                .font(.system(size: size * 0.42, weight: .bold, design: .rounded))
-                .foregroundStyle(.white)
-                .minimumScaleFactor(0.5)
+            if let img {
+                Circle().fill(.white)
+                Image(uiImage: img)
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFit()
+                    .padding(size * 0.14)
+                    .clipShape(Circle())
+            } else {
+                Circle().fill(c.gradient)
+                Text(MerchantStyle.initials(for: name))
+                    .font(.system(size: size * 0.42, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .minimumScaleFactor(0.5)
+            }
         }
         .frame(width: size, height: size)
+        .task(id: resolvedDomain) {
+            guard let d = resolvedDomain, LogoStore.shared.image(for: d) == nil else { return }
+            if await LogoStore.shared.fetch(d) { logo = LogoStore.shared.image(for: d) }
+        }
     }
 }
 
