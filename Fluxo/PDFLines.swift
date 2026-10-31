@@ -12,16 +12,46 @@ enum PDFLines {
 
     static func all(_ data: Data) -> [Strategy] {
         guard let doc = PDFDocument(data: data) else { return [] }
-        var geo: [String] = [], byLine: [String] = [], raw: [String] = []
+        var cellsOut: [String] = [], geo: [String] = [], byLine: [String] = [], raw: [String] = []
         for i in 0..<doc.pageCount {
             guard let page = doc.page(at: i) else { continue }
+            cellsOut += cells(page)
             geo += geometry(page)
             byLine += selectionLines(page)
             raw += (page.string ?? "").components(separatedBy: .newlines)
         }
-        return [Strategy(name: "geometría", lines: geo),
+        return [Strategy(name: "celdas", lines: cellsOut),
+                Strategy(name: "geometría", lines: geo),
                 Strategy(name: "selección", lines: byLine),
                 Strategy(name: "texto", lines: raw)]
+    }
+
+    /// Cada línea del texto bruto suele ser una celda (fecha, concepto, importe…).
+    /// Se coloca cada celda en su posición real y se reconstruyen las filas.
+    static func cells(_ page: PDFPage) -> [String] {
+        guard let str = page.string else { return [] }
+        let ns = str as NSString
+        struct Cell { var text: String; var r: CGRect }
+        var cells: [Cell] = []
+        ns.enumerateSubstrings(in: NSRange(location: 0, length: ns.length), options: .byLines) { sub, range, _, _ in
+            guard let sub, !sub.trimmingCharacters(in: .whitespaces).isEmpty,
+                  let sel = page.selection(for: range) else { return }
+            let r = sel.bounds(for: page)
+            guard r.width > 0, r.height > 0, r.height < 40 || r.width > r.height else { return }
+            cells.append(Cell(text: sub.trimmingCharacters(in: .whitespaces), r: r))
+        }
+        cells.sort { $0.r.midY > $1.r.midY }
+        var rows: [(y: CGFloat, h: CGFloat, items: [Cell])] = []
+        for c in cells {
+            if let last = rows.last, abs(last.y - c.r.midY) <= max(2, min(last.h, c.r.height) * 0.5) {
+                rows[rows.count - 1].items.append(c)
+            } else {
+                rows.append((c.r.midY, c.r.height, [c]))
+            }
+        }
+        return rows.map { row in
+            row.items.sorted { $0.r.minX < $1.r.minX }.map(\.text).joined(separator: "   ")
+        }
     }
 
     /// Agrupa los caracteres por su posición vertical y los ordena de izquierda a derecha.
