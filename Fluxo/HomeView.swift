@@ -4,6 +4,7 @@ struct HomeView: View {
     @EnvironmentObject var model: AppModel
     @Binding var tab: AppTab
     @State private var addingTx = false
+    @State private var importing = false
 
     private var cal: Calendar { Schedule.cal }
     private var now: DateComponents { cal.dateComponents([.year, .month], from: .now) }
@@ -35,6 +36,7 @@ struct HomeView: View {
             }
         }
         .sheet(isPresented: $addingTx) { TransactionEditor(transaction: nil) }
+        .sheet(isPresented: $importing) { ImportStatementView() }
     }
 
     // MARK: Bienvenida
@@ -55,6 +57,12 @@ struct HomeView: View {
                 Label("Probar con datos de ejemplo", systemImage: "sparkles").frame(maxWidth: .infinity).padding(.vertical, 6)
             }
             .buttonStyle(.glassProminent)
+            Button {
+                importing = true
+            } label: {
+                Label("Importar extracto del banco", systemImage: "square.and.arrow.down").frame(maxWidth: .infinity).padding(.vertical, 6)
+            }
+            .buttonStyle(.glass)
             Button {
                 tab = .settings
             } label: {

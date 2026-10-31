@@ -55,6 +55,28 @@ final class AppModel: ObservableObject {
 
     // MARK: Movimientos
 
+    /// Añade movimientos importados sin duplicar (mismo id, o mismo día e importe que uno ya existente).
+    func importTransactions(_ incoming: [Transaction]) -> (added: Int, duplicates: Int) {
+        if data.demo {
+            data.transactions.removeAll { $0.source == .demo }
+            data.demo = false
+        }
+        let c = Schedule.cal
+        var ids = Set(data.transactions.map(\.id))
+        var keys = Set(data.transactions.map { "\(c.startOfDay(for: $0.date).timeIntervalSince1970)|\(String(format: "%.2f", $0.amount))" })
+        var added = 0, dup = 0
+        for t in incoming {
+            let key = "\(c.startOfDay(for: t.date).timeIntervalSince1970)|\(String(format: "%.2f", t.amount))"
+            if ids.contains(t.id) || keys.contains(key) { dup += 1; continue }
+            data.transactions.append(t)
+            ids.insert(t.id); keys.insert(key)
+            added += 1
+        }
+        persist()
+        Task { await prefetchLogos() }
+        return (added, dup)
+    }
+
     func add(_ t: Transaction) {
         data.transactions.append(t)
         persist()

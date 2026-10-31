@@ -8,6 +8,7 @@ struct SettingsScreen: View {
     @State private var detected: [Subscription] = []
     @State private var showDetected = false
     @State private var confirmReset = false
+    @State private var importing = false
 
     var body: some View {
         NavigationStack {
@@ -33,6 +34,7 @@ struct SettingsScreen: View {
             .sheet(item: $editing) { SubscriptionEditor(subscription: $0) }
             .sheet(isPresented: $adding) { SubscriptionEditor(subscription: nil) }
             .sheet(isPresented: $showDetected) { DetectedSheet(items: detected) }
+            .sheet(isPresented: $importing) { ImportStatementView() }
             .confirmationDialog("¿Borrar todos los datos de Fluxo?", isPresented: $confirmReset, titleVisibility: .visible) {
                 Button("Borrar todo", role: .destructive) { model.resetAll() }
             }
@@ -135,6 +137,7 @@ struct SettingsScreen: View {
 
     private var dataSection: some View {
         Section("Datos") {
+            Button { importing = true } label: { Label("Importar extracto del banco", systemImage: "square.and.arrow.down") }
             if model.data.demo {
                 Button("Quitar datos de ejemplo") { model.clearDemo() }
             } else {

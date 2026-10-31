@@ -7,6 +7,7 @@ struct TransactionsScreen: View {
     @State private var range: DateRange = .all
     @State private var editing: Transaction? = nil
     @State private var adding = false
+    @State private var importing = false
 
     enum DateRange: String, CaseIterable, Identifiable {
         case all = "Todas", thisMonth = "Este mes", lastMonth = "Mes pasado", last7 = "7 días"
@@ -72,9 +73,13 @@ struct TransactionsScreen: View {
             .searchable(text: $search, prompt: "Buscar")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { adding = true } label: { Image(systemName: "plus") }
+                    Menu {
+                        Button { adding = true } label: { Label("Añadir movimiento", systemImage: "plus") }
+                        Button { importing = true } label: { Label("Importar extracto", systemImage: "square.and.arrow.down") }
+                    } label: { Image(systemName: "plus") }
                 }
             }
+            .sheet(isPresented: $importing) { ImportStatementView() }
             .sheet(item: $editing) { t in TransactionEditor(transaction: t) }
             .sheet(isPresented: $adding) { TransactionEditor(transaction: nil) }
         }
