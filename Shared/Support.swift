@@ -248,6 +248,8 @@ extension MerchantStyle {
         ("ing", "ing.es"), ("caixabank", "caixabank.es"), ("bbva", "bbva.es"), ("santander", "bancosantander.es"),
         ("sabadell", "bancsabadell.com"), ("bankinter", "bankinter.com"), ("openbank", "openbank.es"), ("revolut", "revolut.com"),
         ("n26", "n26.com"), ("paypal", "paypal.com"), ("wizink", "wizink.es"), ("cetelem", "cetelem.es"),
+        ("kittl", "kittl.com"), ("elevenlabs", "elevenlabs.io"), ("suno", "suno.com"), ("tiktok", "tiktok.com"),
+        ("shopify", "shopify.com"), ("crtm", "crtm.es"), ("bk", "burgerking.es"), ("apple combill", "apple.com"),
         ("dgt", "dgt.es"), ("hacienda", "agenciatributaria.gob.es"), ("seguridad social", "seg-social.es"),
     ]
 
@@ -373,20 +375,21 @@ struct MerchantBubble: View {
 
 enum Categorizer {
     private static let rules: [(Category, [String])] = [
-        (.supermercado, ["mercadona", "carrefour", "lidl", "dia ", "alcampo", "eroski", "aldi", "hipercor", "consum", "ahorramas", "supermerc"]),
-        (.combustible, ["shell", "repsol", "cepsa", "galp", "bp ", "gasolin", "petronor", "ballenoil", "plenoil"]),
-        (.suscripciones, ["netflix", "spotify", "disney", "hbo", "max.com", "prime video", "youtube", "icloud", "apple.com", "google one", "chatgpt", "openai", "claude", "dazn", "filmin", "playstation", "xbox"]),
+        (.supermercado, ["alimentacion", "supermercado", "bazar", "fruteria", "carniceria", "mercadona", "carrefour", "lidl", "dia ", "alcampo", "eroski", "aldi", "hipercor", "consum", "ahorramas", "supermerc"]),
+        (.combustible, ["e.s.", "e.s ", "es bp", "estacion de servicio", "shell", "repsol", "cepsa", "galp", "bp ", "gasolin", "petronor", "ballenoil", "plenoil"]),
+        (.suscripciones, ["netflix", "spotify", "disney", "hbo", "max.com", "prime video", "youtube", "icloud", "apple.com", "google one", "chatgpt", "openai", "claude", "apple.combill", "kittl", "elevenlabs", "suno", "canva", "adobe", "dazn", "filmin", "playstation", "xbox"]),
         (.telefonia, ["movistar", "vodafone", "orange", "digi", "yoigo", "o2 ", "pepephone", "masmovil", "lowi", "simyo"]),
         (.hogar, ["alquiler", "iberdrola", "endesa", "naturgy", "canal de isabel", "agua", "comunidad", "ikea", "leroy", "hipoteca", "seguro hogar"]),
-        (.restaurantes, ["restaur", "burger", "mcdonald", "telepizza", "domino", "kfc", "glovo", "just eat", "uber eats", "tapas", "taberna", "bar "]),
+        (.restaurantes, ["bk ", "pollo asado", "pizzeria", "kebab", "restaur", "burger", "mcdonald", "telepizza", "domino", "kfc", "glovo", "just eat", "uber eats", "tapas", "taberna", "bar "]),
         (.cafe, ["starbucks", "cafe", "café", "cafeter", "panader", "100 montaditos"]),
-        (.transporte, ["uber", "cabify", "bolt", "renfe", "metro", "emt", "parking", "peaje", "itv", "taller", "dgt"]),
+        (.transporte, ["crtm", "abono transporte", "uber", "cabify", "bolt", "renfe", "metro", "emt", "parking", "peaje", "itv", "taller", "dgt"]),
         (.ocio, ["cine", "ticketmaster", "booking", "airbnb", "ryanair", "iberia", "vueling", "steam", "hotel"]),
-        (.compras, ["amazon", "zara", "primark", "el corte ingl", "mediamarkt", "decathlon", "aliexpress", "shein", "fnac"]),
+        (.compras, ["tiktok shop", "shopify", "temu", "amazon", "zara", "primark", "el corte ingl", "mediamarkt", "decathlon", "aliexpress", "shein", "fnac"]),
         (.salud, ["farmacia", "clinica", "clínica", "dentist", "sanitas", "adeslas", "hospital"]),
         (.cuidado, ["peluquer", "barber", "druni", "primor", "sephora"]),
         (.deporte, ["gym", "gimnas", "synergym", "basic-fit", "basic fit", "mcfit", "fitness"]),
-        (.transferencias, ["transferencia", "traspaso", "bizum"]),
+        (.transferencias, ["transferencia", "traspaso", "bizum", "reintegro cajero", "cargo cajero", "cajero"]),
+        (.otros, ["estanco", "expendiduria", "tabacos", "loteria", "loterias"]),
     ]
 
     static func category(for text: String, amount: Double) -> Category {

@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 struct ImportStatementView: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) var dismiss
+    var initialFiles: [URL] = []
 
     @State private var picking = false
     @State private var account = UserDefaults.standard.string(forKey: "import.account") ?? "ING"
@@ -23,14 +24,13 @@ struct ImportStatementView: View {
                             Label("Elegir archivo del extracto", systemImage: "doc.badge.plus")
                         }
                     } footer: {
-                        Text("Vale CSV o Excel (.xlsx) de cualquier banco. Fluxo busca solo las columnas de fecha, concepto e importe.")
+                        Text("Vale el PDF del extracto mensual, CSV o Excel (.xlsx). Puedes elegir varios meses a la vez.")
                     }
-                    Section("Cómo sacarlo de ING") {
-                        Label("Entra en ing.es desde el navegador (mejor en ordenador).", systemImage: "1.circle")
-                        Label("Abre tu cuenta › Movimientos y elige las fechas.", systemImage: "2.circle")
-                        Label("Pulsa el icono de descargar › Excel.", systemImage: "3.circle")
-                        Label("Pásalo al iPhone (AirDrop, iCloud Drive o correo) e impórtalo aquí.", systemImage: "4.circle")
-                        Label("Si sale un aviso de Excel antiguo (.xls): ábrelo en Numbers › Compartir › Exportar › Excel o CSV.", systemImage: "info.circle")
+                    Section("Desde la app de ING (en el móvil)") {
+                        Label("Abre la app de ING › tu cuenta › Extractos (o Documentos).", systemImage: "1.circle")
+                        Label("Abre el extracto mensual en PDF.", systemImage: "2.circle")
+                        Label("Pulsa Compartir y elige Fluxo. Se importa directamente.", systemImage: "3.circle")
+                        Label("Si Fluxo no sale en Compartir: «Guardar en Archivos» y luego impórtalo aquí.", systemImage: "info.circle")
                             .foregroundStyle(.secondary)
                     }
                     .font(.footnote)
@@ -46,12 +46,13 @@ struct ImportStatementView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cerrar") { dismiss() } }
             }
-            .fileImporter(isPresented: $picking, allowedContentTypes: [.item]) { r in
+            .fileImporter(isPresented: $picking, allowedContentTypes: [.item], allowsMultipleSelection: true) { r in
                 switch r {
-                case .success(let url): load(url)
+                case .success(let urls): load(urls)
                 case .failure(let e): error = e.localizedDescription
                 }
             }
+            .onAppear { if result == nil, !initialFiles.isEmpty { load(initialFiles) } }
         }
     }
 
@@ -93,23 +94,34 @@ struct ImportStatementView: View {
         }
     }
 
-    private func load(_ url: URL) {
-        let ok = url.startAccessingSecurityScopedResource()
-        defer { if ok { url.stopAccessingSecurityScopedResource() } }
-        var data: Data?
-        var coordError: NSError?
-        NSFileCoordinator().coordinate(readingItemAt: url, options: .withoutChanges, error: &coordError) { u in
-            data = try? Data(contentsOf: u)
-        }
-        guard let data else { error = "No se pudo leer el archivo."; return }
+    private func load(_ urls: [URL]) {
         UserDefaults.standard.set(account, forKey: "import.account")
-        do {
-            fileName = url.lastPathComponent
-            result = try StatementImporter.parse(data: data, fileName: url.lastPathComponent,
-                                                 account: account.isEmpty ? "Cuenta" : account)
-            error = nil
-        } catch {
-            self.error = error.localizedDescription
+        var all: [Transaction] = []
+        var skipped = 0
+        var cols: [String] = []
+        var errors: [String] = []
+        for url in urls {
+            let ok = url.startAccessingSecurityScopedResource()
+            defer { if ok { url.stopAccessingSecurityScopedResource() } }
+            var data: Data?
+            var coordError: NSError?
+            NSFileCoordinator().coordinate(readingItemAt: url, options: .withoutChanges, error: &coordError) { u in
+                data = try? Data(contentsOf: u)
+            }
+            guard let data else { errors.append("\(url.lastPathComponent): no se pudo leer"); continue }
+            do {
+                let r = try StatementImporter.parse(data: data, fileName: url.lastPathComponent,
+                                                    account: account.isEmpty ? "Cuenta" : account)
+                all += r.transactions
+                skipped += r.skipped
+                cols.append(r.columns)
+            } catch {
+                errors.append("\(url.lastPathComponent): \(error.localizedDescription)")
+            }
         }
+        fileName = urls.count == 1 ? urls[0].lastPathComponent : "\(urls.count) archivos"
+        error = errors.isEmpty ? nil : errors.joined(separator: "\n")
+        result = all.isEmpty ? nil : StatementImporter.Result(transactions: all, skipped: skipped,
+                                                               columns: Array(Set(cols)).sorted().joined(separator: " | "))
     }
 }

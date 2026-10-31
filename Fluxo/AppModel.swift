@@ -7,6 +7,8 @@ final class AppModel: ObservableObject {
     @Published var data: AppData
     @Published var syncing = false
     @Published var message: String?
+    /// Archivos recibidos desde "Abrir con…" / Compartir, pendientes de importar.
+    @Published var incomingFiles: [URL] = []
 
     init() {
         data = SharedStore.load()
@@ -62,14 +64,21 @@ final class AppModel: ObservableObject {
             data.demo = false
         }
         let c = Schedule.cal
+        func key(_ t: Transaction) -> String {
+            "\(c.startOfDay(for: t.date).timeIntervalSince1970)|\(String(format: "%.2f", t.amount))"
+        }
         var ids = Set(data.transactions.map(\.id))
-        var keys = Set(data.transactions.map { "\(c.startOfDay(for: $0.date).timeIntervalSince1970)|\(String(format: "%.2f", $0.amount))" })
+        // Cuenta cuántos movimientos iguales (día + importe) ya hay, para no duplicar si se importa
+        // el mismo periodo en otro formato, pero sí permitir dos cargos iguales el mismo día.
+        var existing: [String: Int] = [:]
+        for t in data.transactions { existing[key(t), default: 0] += 1 }
         var added = 0, dup = 0
         for t in incoming {
-            let key = "\(c.startOfDay(for: t.date).timeIntervalSince1970)|\(String(format: "%.2f", t.amount))"
-            if ids.contains(t.id) || keys.contains(key) { dup += 1; continue }
+            if ids.contains(t.id) { dup += 1; continue }
+            let k = key(t)
+            if let n = existing[k], n > 0 { existing[k] = n - 1; dup += 1; continue }
             data.transactions.append(t)
-            ids.insert(t.id); keys.insert(key)
+            ids.insert(t.id)
             added += 1
         }
         persist()

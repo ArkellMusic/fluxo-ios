@@ -40,6 +40,10 @@ struct RootView: View {
         }
         .tabBarMinimizeBehavior(.onScrollDown)
         .onOpenURL { url in
+            if url.isFileURL {
+                model.incomingFiles = [url]
+                return
+            }
             // Por si el banco vuelve a la app por fuera de la ventana de login
             if url.scheme == "fluxo", let code = BankAuthFlow.code(from: url) {
                 PendingBank.shared.receive(code: code, model: model)
@@ -53,6 +57,9 @@ struct RootView: View {
                (model.data.lastSync ?? .distantPast) < Date().addingTimeInterval(-6 * 3600) {
                 await model.sync()
             }
+        }
+        .sheet(isPresented: Binding(get: { !model.incomingFiles.isEmpty }, set: { if !$0 { model.incomingFiles = [] } })) {
+            ImportStatementView(initialFiles: model.incomingFiles)
         }
         .alert(model.message ?? "", isPresented: Binding(get: { model.message != nil }, set: { if !$0 { model.message = nil } })) {
             Button("OK", role: .cancel) {}

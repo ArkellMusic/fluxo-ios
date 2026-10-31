@@ -1,5 +1,6 @@
 import Foundation
 import Compression
+import PDFKit
 
 /// Lee extractos bancarios (CSV, Excel .xlsx o tablas HTML guardadas como .xls) y los convierte en movimientos.
 enum StatementImporter {
@@ -11,13 +12,14 @@ enum StatementImporter {
     }
 
     enum ImportError: LocalizedError {
-        case unreadable, legacyXLS, noHeader, empty
+        case unreadable, legacyXLS, noHeader, empty, pdfNoMovements
         var errorDescription: String? {
             switch self {
             case .unreadable: "No he podido leer el archivo."
             case .legacyXLS: "Es un Excel antiguo (.xls). Ábrelo en Numbers y expórtalo como Excel (.xlsx) o CSV, y vuelve a importarlo."
             case .noHeader: "No encuentro las columnas de fecha e importe. ¿Es un extracto de movimientos?"
             case .empty: "El archivo no tiene movimientos."
+            case .pdfNoMovements: "No encuentro movimientos en este PDF. ¿Es el extracto mensual o la lista de movimientos de tu cuenta?"
             }
         }
     }
@@ -25,6 +27,9 @@ enum StatementImporter {
     // MARK: Entrada
 
     static func parse(data: Data, fileName: String, account: String) throws -> Result {
+        if data.starts(with: Array("%PDF".utf8)) || fileName.lowercased().hasSuffix(".pdf") {
+            return try PDFStatement.parse(data, defaultAccount: account)
+        }
         let rows = try table(from: data, fileName: fileName)
         return try convert(rows: rows, account: account)
     }
@@ -171,12 +176,15 @@ enum StatementImporter {
 
     static func cleanMerchant(_ desc: String) -> String {
         var t = desc
+        if let r = t.range(of: #"\*{2,}\d{3,4}"#, options: .regularExpression) { t.removeSubrange(r) }
         let prefixes = ["pago en ", "compra en ", "compra tarjeta ", "pago con tarjeta en ", "transaccion contactless en ",
                         "recibo ", "adeudo ", "cargo ", "transferencia a favor de ", "transferencia de ", "bizum a ", "bizum de ",
-                        "pago movil en ", "apple pay ", "google pay "]
+                        "pago movil en ", "apple pay ", "google pay ", "pago "]
         let lower = norm(t)
         for p in prefixes where lower.hasPrefix(p) { t = String(t.dropFirst(p.count)); break }
         if let r = t.range(of: ", tarj", options: .caseInsensitive) { t = String(t[..<r.lowerBound]) }
+        t = t.trimmingCharacters(in: .whitespaces)
+        for suffix in [" ES", " IE", " NL", " LU", " GB", " DE", " FR"] where t.hasSuffix(suffix) { t = String(t.dropLast(suffix.count)) }
         t = t.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: ",.-")))
         if t == t.uppercased(), t.count > 3 { t = t.capitalized }
         return String(t.prefix(40))
@@ -387,5 +395,119 @@ enum Zip {
             }
         }
         return out
+    }
+}
+
+
+// MARK: - PDF (extracto mensual de ING y similares)
+
+enum PDFStatement {
+    /// Reconstruye las líneas del PDF por posición, igual que se ven en pantalla.
+    static func lines(_ data: Data) -> [String]? {
+        guard let doc = PDFDocument(data: data) else { return nil }
+        var out: [String] = []
+        for p in 0..<doc.pageCount {
+            guard let page = doc.page(at: p), let str = page.string else { continue }
+            let ns = str as NSString
+            struct G { var ch: String; var r: CGRect }
+            var glyphs: [G] = []
+            for i in 0..<ns.length {
+                let ch = ns.substring(with: NSRange(location: i, length: 1))
+                if ch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { continue }
+                let r = page.characterBounds(at: i)
+                if r.width <= 0 || r.height <= 0 { continue }
+                glyphs.append(G(ch: ch, r: r))
+            }
+            // Agrupa por altura (y) en filas
+            glyphs.sort { $0.r.midY > $1.r.midY }
+            var rows: [[G]] = []
+            var rowY: [CGFloat] = []
+            for g in glyphs {
+                if let last = rowY.last, abs(last - g.r.midY) < max(2, g.r.height * 0.45) {
+                    rows[rows.count - 1].append(g)
+                } else {
+                    rows.append([g]); rowY.append(g.r.midY)
+                }
+            }
+            for row in rows {
+                let sorted = row.sorted { $0.r.minX < $1.r.minX }
+                var line = ""
+                var prev: CGRect?
+                for g in sorted {
+                    if let pr = prev {
+                        let gap = g.r.minX - pr.maxX
+                        let w = max(pr.width, 1)
+                        if gap > w * 2.2 { line += "   " } else if gap > w * 0.22 { line += " " }
+                    }
+                    line += g.ch
+                    prev = g.r
+                }
+                out.append(line)
+            }
+        }
+        return out
+    }
+
+    static func parse(_ data: Data, defaultAccount: String) throws -> StatementImporter.Result {
+        guard let lines = lines(data), !lines.isEmpty else { throw StatementImporter.ImportError.unreadable }
+        let all = lines.joined(separator: "\n")
+
+        // Fin del periodo: la fecha completa más reciente del extracto
+        let df = DateFormatter()
+        df.locale = Locale(identifier: "es_ES"); df.dateFormat = "dd/MM/yyyy"
+        let fullDates = matches(#"\b(\d{2}/\d{2}/\d{4})\b"#, in: all).compactMap { df.date(from: $0[1]) }
+        let end = fullDates.max() ?? Date()
+        let cal = Calendar(identifier: .gregorian)
+        let endYear = cal.component(.year, from: end)
+        let endMonth = cal.component(.month, from: end)
+
+        let txRegex = try! NSRegularExpression(pattern: #"(\d{2}/\d{2}(?:/\d{2,4})?)\s+(?:\d{2}/\d{2}(?:/\d{2,4})?\s+)?(.+?)\s+(-?[\d.]+,\d{2})\s?€?\s+(-?[\d.]+,\d{2})\s?€?\s*$"#)
+        let accRegex = try! NSRegularExpression(pattern: #"(Cuenta\s+.+?)\s+-\s+IBAN"#, options: .caseInsensitive)
+
+        var account = defaultAccount
+        var out: [Transaction] = []
+        var seen: [String: Int] = [:]
+        var skipped = 0
+        for line in lines {
+            let ns = line as NSString
+            let range = NSRange(location: 0, length: ns.length)
+            if let a = accRegex.firstMatch(in: line, range: range) {
+                account = ns.substring(with: a.range(at: 1)).capitalized
+                continue
+            }
+            guard let m = txRegex.firstMatch(in: line, range: range) else { continue }
+            let dateStr = ns.substring(with: m.range(at: 1))
+            let desc = ns.substring(with: m.range(at: 2)).trimmingCharacters(in: .whitespaces)
+            let amountStr = ns.substring(with: m.range(at: 3))
+            if desc.lowercased().hasPrefix("saldo") { continue }
+            guard let amount = StatementImporter.parseAmount(amountStr), amount != 0 else { skipped += 1; continue }
+
+            let parts = dateStr.split(separator: "/").compactMap { Int($0) }
+            guard parts.count >= 2 else { skipped += 1; continue }
+            var year = endYear
+            if parts.count == 3 { year = parts[2] < 100 ? 2000 + parts[2] : parts[2] }
+            else if parts[1] > endMonth + 1 { year -= 1 }   // diciembre en un extracto de enero
+            guard let date = cal.date(from: DateComponents(year: year, month: parts[1], day: parts[0])) else { skipped += 1; continue }
+
+            let merchant = StatementImporter.cleanMerchant(desc)
+            let base = "\(Int(date.timeIntervalSince1970))|\(String(format: "%.2f", amount))|\(desc.lowercased())|\(account)"
+            let n = seen[base, default: 0]
+            seen[base] = n + 1
+            out.append(Transaction(id: "imp-" + StatementImporter.stableHash(base + "|\(n)"), date: date, amount: amount,
+                                   merchant: merchant,
+                                   category: Categorizer.category(for: merchant + " " + desc, amount: amount),
+                                   account: account, note: desc == merchant ? nil : desc, source: .bank))
+        }
+        guard !out.isEmpty else { throw StatementImporter.ImportError.pdfNoMovements }
+        let accounts = Set(out.map(\.account)).sorted().joined(separator: ", ")
+        return StatementImporter.Result(transactions: out, skipped: skipped, columns: "PDF · \(accounts)")
+    }
+
+    private static func matches(_ pattern: String, in text: String) -> [[String]] {
+        let rx = try! NSRegularExpression(pattern: pattern)
+        let ns = text as NSString
+        return rx.matches(in: text, range: NSRange(location: 0, length: ns.length)).map { m in
+            (0..<m.numberOfRanges).map { m.range(at: $0).location == NSNotFound ? "" : ns.substring(with: m.range(at: $0)) }
+        }
     }
 }

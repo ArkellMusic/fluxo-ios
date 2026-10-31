@@ -20,6 +20,23 @@
 			<key>CFBundleURLSchemes</key><array><string>fluxo</string></array>
 		</dict>
 	</array>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key><string>Extracto bancario</string>
+			<key>CFBundleTypeRole</key><string>Viewer</string>
+			<key>LSHandlerRank</key><string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.adobe.pdf</string>
+				<string>public.comma-separated-values-text</string>
+				<string>public.plain-text</string>
+				<string>org.openxmlformats.spreadsheetml.sheet</string>
+				<string>com.microsoft.excel.xls</string>
+			</array>
+		</dict>
+	</array>
+	<key>LSSupportsOpeningDocumentsInPlace</key><false/>
 	<key>LSRequiresIPhoneOS</key><true/>
 	<key>UILaunchScreen</key><dict/>
 	<key>UIUserInterfaceStyle</key><string>Dark</string>
