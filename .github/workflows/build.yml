@@ -24,6 +24,14 @@ jobs:
       - name: Instalar herramientas
         run: brew install xcodegen ldid
 
+      - name: Probar lector de PDF
+        continue-on-error: true
+        run: |
+          python3 -m pip install --quiet --break-system-packages reportlab || python3 -m pip install --quiet reportlab
+          python3 Tests/pdf/make_pdf.py /tmp/test.pdf /System/Library/Fonts/Supplemental/Arial.ttf
+          swiftc -O -o /tmp/pdftest Fluxo/PDFLines.swift Tests/pdf/main.swift
+          /tmp/pdftest /tmp/test.pdf
+
       - name: Generar proyecto
         run: xcodegen generate
 

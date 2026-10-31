@@ -148,6 +148,7 @@ enum StatementImporter {
 
     static func parseAmount(_ raw: String) -> Double? {
         var s = raw.replacingOccurrences(of: "€", with: "")
+            .replacingOccurrences(of: "−", with: "-").replacingOccurrences(of: "–", with: "-")
             .replacingOccurrences(of: "EUR", with: "")
             .replacingOccurrences(of: "\u{00A0}", with: "")
             .replacingOccurrences(of: " ", with: "")
@@ -402,54 +403,27 @@ enum Zip {
 // MARK: - PDF (extracto mensual de ING y similares)
 
 enum PDFStatement {
-    /// Reconstruye las líneas del PDF por posición, igual que se ven en pantalla.
-    static func lines(_ data: Data) -> [String]? {
-        guard let doc = PDFDocument(data: data) else { return nil }
-        var out: [String] = []
-        for p in 0..<doc.pageCount {
-            guard let page = doc.page(at: p), let str = page.string else { continue }
-            let ns = str as NSString
-            struct G { var ch: String; var r: CGRect }
-            var glyphs: [G] = []
-            for i in 0..<ns.length {
-                let ch = ns.substring(with: NSRange(location: i, length: 1))
-                if ch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { continue }
-                let r = page.characterBounds(at: i)
-                if r.width <= 0 || r.height <= 0 { continue }
-                glyphs.append(G(ch: ch, r: r))
-            }
-            // Agrupa por altura (y) en filas
-            glyphs.sort { $0.r.midY > $1.r.midY }
-            var rows: [[G]] = []
-            var rowY: [CGFloat] = []
-            for g in glyphs {
-                if let last = rowY.last, abs(last - g.r.midY) < max(2, g.r.height * 0.45) {
-                    rows[rows.count - 1].append(g)
-                } else {
-                    rows.append([g]); rowY.append(g.r.midY)
-                }
-            }
-            for row in rows {
-                let sorted = row.sorted { $0.r.minX < $1.r.minX }
-                var line = ""
-                var prev: CGRect?
-                for g in sorted {
-                    if let pr = prev {
-                        let gap = g.r.minX - pr.maxX
-                        let w = max(pr.width, 1)
-                        if gap > w * 2.2 { line += "   " } else if gap > w * 0.22 { line += " " }
-                    }
-                    line += g.ch
-                    prev = g.r
-                }
-                out.append(line)
-            }
+    static func parse(_ data: Data, defaultAccount: String) throws -> StatementImporter.Result {
+        let strategies = PDFLines.all(data)
+        guard !strategies.isEmpty else { throw StatementImporter.ImportError.unreadable }
+        var best: StatementImporter.Result?
+        var report: [String] = []
+        for st in strategies {
+            let r = parse(lines: st.lines, defaultAccount: defaultAccount)
+            report.append("\(st.name): \(st.lines.count) líneas, \(r.transactions.count) movs")
+            if r.transactions.count > (best?.transactions.count ?? 0) { best = r }
         }
-        return out
+        lastDiagnostic = report.joined(separator: "\n") + "\n\n" + strategies.map { st in
+            "— \(st.name) —\n" + st.lines.filter { $0.range(of: #"\d{2}/\d{2}"#, options: .regularExpression) != nil }.prefix(6).joined(separator: "\n")
+        }.joined(separator: "\n")
+        guard let best, !best.transactions.isEmpty else { throw StatementImporter.ImportError.pdfNoMovements }
+        return best
     }
 
-    static func parse(_ data: Data, defaultAccount: String) throws -> StatementImporter.Result {
-        guard let lines = lines(data), !lines.isEmpty else { throw StatementImporter.ImportError.unreadable }
+    /// Texto de diagnóstico del último PDF leído (para poder revisar fallos).
+    static var lastDiagnostic = ""
+
+    static func parse(lines: [String], defaultAccount: String) -> StatementImporter.Result {
         let all = lines.joined(separator: "\n")
 
         // Fin del periodo: la fecha completa más reciente del extracto
@@ -461,7 +435,7 @@ enum PDFStatement {
         let endYear = cal.component(.year, from: end)
         let endMonth = cal.component(.month, from: end)
 
-        let txRegex = try! NSRegularExpression(pattern: #"(\d{2}/\d{2}(?:/\d{2,4})?)\s+(?:\d{2}/\d{2}(?:/\d{2,4})?\s+)?(.+?)\s+(-?[\d.]+,\d{2})\s?€?\s+(-?[\d.]+,\d{2})\s?€?\s*$"#)
+        let txRegex = try! NSRegularExpression(pattern: #"(\d{2}/\d{2}(?:/\d{2,4})?)\s+(?:\d{2}/\d{2}(?:/\d{2,4})?\s+)?(.+?)\s+([-−–]?\s?[\d.]+,\d{2})\s?€?\s+([-−–]?\s?[\d.]+,\d{2})\s?€?"#)
         let accRegex = try! NSRegularExpression(pattern: #"(Cuenta\s+.+?)\s+-\s+IBAN"#, options: .caseInsensitive)
 
         var account = defaultAccount
@@ -498,7 +472,6 @@ enum PDFStatement {
                                    category: Categorizer.category(for: merchant + " " + desc, amount: amount),
                                    account: account, note: desc == merchant ? nil : desc, source: .bank))
         }
-        guard !out.isEmpty else { throw StatementImporter.ImportError.pdfNoMovements }
         let accounts = Set(out.map(\.account)).sorted().joined(separator: ", ")
         return StatementImporter.Result(transactions: out, skipped: skipped, columns: "PDF · \(accounts)")
     }

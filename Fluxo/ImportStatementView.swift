@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 
 struct ImportStatementView: View {
@@ -36,7 +37,18 @@ struct ImportStatementView: View {
                     .font(.footnote)
                 }
                 if let error {
-                    Section { Text(error).foregroundStyle(Theme.negative).font(.footnote) }
+                    Section {
+                        Text(error).foregroundStyle(Theme.negative).font(.footnote)
+                        if !PDFStatement.lastDiagnostic.isEmpty {
+                            DisclosureGroup("Detalles técnicos") {
+                                Text(PDFStatement.lastDiagnostic)
+                                    .font(.caption2.monospaced())
+                                    .textSelection(.enabled)
+                                Button("Copiar detalles") { UIPasteboard.general.string = PDFStatement.lastDiagnostic }
+                            }
+                            .font(.footnote)
+                        }
+                    }
                 }
             }
             .scrollContentBackground(.hidden)
